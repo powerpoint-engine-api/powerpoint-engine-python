@@ -1,0 +1,54 @@
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dependencies
+node_modules/
+vendor/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist/
+build/
+coverage/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.nyc_output/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Package manager locks (keep for libraries)
+# package-lock.json
+# composer.lock
+# poetry.lock
+
+# Test artifacts
+.phpunit.result.cache
+junit.xml
