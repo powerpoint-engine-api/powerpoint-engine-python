@@ -1,13 +1,15 @@
 """PowerPoint Engine API Python SDK
 
-A Python client library for the PowerPoint Engine API.
+A Python client for the PowerPoint Engine API (https://powerpointengine.io):
+generate .pptx from Markdown or a template, edit/merge/replace in existing
+decks, and convert PPTX to PDF.
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "PowerPoint Engine API"
 __email__ = "support@powerpointengine.io"
 
-from .client import PowerPointEngine, AsyncPowerPointEngine
+from .client import PowerPointEngine
 from .exceptions import (
     PowerPointEngineError,
     AuthenticationError,
@@ -16,28 +18,13 @@ from .exceptions import (
     RateLimitError,
     ServerError,
 )
-from .models import (
-    Presentation,
-    Template,
-    Slide,
-    ChartData,
-    TableData,
-    Webhook,
-)
 
 __all__ = [
     "PowerPointEngine",
-    "AsyncPowerPointEngine",
     "PowerPointEngineError",
     "AuthenticationError",
-    "ValidationError", 
+    "ValidationError",
     "NotFoundError",
     "RateLimitError",
     "ServerError",
-    "Presentation",
-    "Template",
-    "Slide",
-    "ChartData",
-    "TableData",
-    "Webhook",
 ]

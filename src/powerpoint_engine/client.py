@@ -1,284 +1,221 @@
-"""PowerPoint Engine API Client"""
+"""PowerPoint Engine API client.
+
+Thin wrapper over the public REST API at https://powerpointengine.io.
+All methods return the parsed JSON response; generated files are fetched
+from the signed ``downloadUrl`` in the result (valid for 24 hours).
+"""
 
 import json
-import time
-from typing import Optional, Dict, Any, Union
-from urllib.parse import urljoin
+import mimetypes
+import os
+from typing import Any, Dict, List, Optional
 
 import requests
 
-from .exceptions import PowerPointEngineError, AuthenticationError, ValidationError, NotFoundError, RateLimitError, ServerError
-from .resources import PresentationsResource, TemplatesResource, WebhooksResource
+from .exceptions import (
+    AuthenticationError,
+    NotFoundError,
+    PowerPointEngineError,
+    RateLimitError,
+    ServerError,
+    ValidationError,
+)
+
+DEFAULT_BASE_URL = "https://powerpointengine.io"
+
+PPTX_MIME = (
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+)
+
+
+def _file_part(path):
+    """(filename, handle, mime) tuple so the API sees the right content type."""
+    mime = mimetypes.guess_type(path)[0] or PPTX_MIME
+    return (os.path.basename(path), open(path, "rb"), mime)
 
 
 class PowerPointEngine:
-    """Synchronous client for PowerPoint Engine API."""
-    
+    """Client for the PowerPoint Engine API.
+
+    Args:
+        session_id: Optional account id (the ``sessionId`` the dashboard
+            shows). Ties generations to your account for credits and history;
+            anonymous calls work but return watermarked files.
+        base_url: API origin (default: https://powerpointengine.io).
+        timeout: Per-request timeout in seconds.
+    """
+
     def __init__(
         self,
-        api_key: str,
-        base_url: str = "https://api.powerpointengine.io",
-        timeout: int = 30,
-        max_retries: int = 3,
+        session_id: Optional[str] = None,
+        base_url: str = DEFAULT_BASE_URL,
+        timeout: int = 120,
     ):
-        """Initialize the PowerPoint Engine client.
-        
-        Args:
-            api_key: Your PowerPoint Engine API key
-            base_url: Base URL for the API (default: https://api.powerpointengine.io)
-            timeout: Request timeout in seconds (default: 30)
-            max_retries: Maximum number of retry attempts (default: 3)
-        """
-        self.api_key = api_key
+        self.session_id = session_id
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self.max_retries = max_retries
-        
         self.session = requests.Session()
-        self.session.headers.update({
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "User-Agent": f"powerpoint-engine-python/1.0.0",
-        })
-        
-        # Initialize resource endpoints
-        self.presentations = PresentationsResource(self)
-        self.templates = TemplatesResource(self)
-        self.webhooks = WebhooksResource(self)
-    
-    def request(
+        self.session.headers["User-Agent"] = "powerpoint-engine-python/2.0.0"
+
+    # -- generation ---------------------------------------------------------
+
+    def generate(
         self,
-        method: str,
-        endpoint: str,
-        data: Optional[Dict[str, Any]] = None,
-        files: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
+        markup: Optional[str] = None,
+        template: Optional[Dict[str, Any]] = None,
+        theme: str = "corporate",
+        brand: Optional[Dict[str, str]] = None,
+        font: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Make a request to the API with retry logic.
-        
-        Args:
-            method: HTTP method (GET, POST, PUT, DELETE)
-            endpoint: API endpoint path
-            data: Request body data
-            files: Files to upload
-            params: Query parameters
-            headers: Additional headers
-            
-        Returns:
-            Parsed JSON response
-            
-        Raises:
-            PowerPointEngineError: For API errors
+        """Generate a .pptx from markup text or a structured template.
+
+        Exactly one of ``markup`` / ``template`` is required. ``markup`` is
+        the Markdown dialect (``# title``, ``## slide``, bullets, tables,
+        ```` ```chart ```` blocks). ``brand`` is a dict of 6-hex colors like
+        ``{"primary": "#E4002B"}``; ``font`` overrides the theme font.
         """
-        url = urljoin(self.base_url, endpoint.lstrip("/"))
-        
-        request_headers = self.session.headers.copy()
-        if headers:
-            request_headers.update(headers)
-        
-        # Handle file uploads
-        if files:
-            # Remove Content-Type for multipart uploads
-            request_headers.pop("Content-Type", None)
-            json_data = None
-        else:
-            json_data = data
-        
-        retry_count = 0
-        while retry_count <= self.max_retries:
-            try:
-                response = self.session.request(
-                    method=method,
-                    url=url,
-                    json=json_data,
-                    files=files,
-                    params=params,
-                    headers=request_headers,
-                    timeout=self.timeout,
-                )
-                
-                # Handle different response types
-                if response.status_code == 204:  # No Content
-                    return {}
-                
-                # Check if response is JSON
-                content_type = response.headers.get("content-type", "")
-                if "application/json" in content_type:
-                    response_data = response.json()
-                else:
-                    # For file downloads
-                    if response.status_code == 200:
-                        return {"content": response.content}
-                    response_data = {"message": response.text}
-                
-                # Handle HTTP errors
-                if not response.ok:
-                    self._handle_error_response(response.status_code, response_data)
-                
-                return response_data
-                
-            except requests.RequestException as e:
-                retry_count += 1
-                if retry_count > self.max_retries:
-                    raise PowerPointEngineError(f"Network error after {self.max_retries} retries: {str(e)}")
-                
-                # Exponential backoff
-                wait_time = (2 ** retry_count) + (retry_count * 0.1)
-                time.sleep(wait_time)
-    
-    def _handle_error_response(self, status_code: int, response_data: Dict[str, Any]) -> None:
-        """Handle API error responses."""
-        error_message = response_data.get("error", response_data.get("message", "Unknown error"))
-        request_id = response_data.get("request_id")
-        
-        if status_code == 401:
-            raise AuthenticationError(error_message, status_code, request_id)
-        elif status_code == 400:
-            raise ValidationError(error_message, status_code, request_id)
-        elif status_code == 404:
-            raise NotFoundError(error_message, status_code, request_id)
-        elif status_code == 429:
-            raise RateLimitError(error_message, status_code, request_id)
-        elif status_code >= 500:
-            raise ServerError(error_message, status_code, request_id)
-        else:
-            raise PowerPointEngineError(error_message, status_code, request_id)
+        if not markup and not template:
+            raise ValueError("either markup or template is required")
+        body: Dict[str, Any] = {"theme": theme}
+        if markup:
+            body["markup"] = markup
+        if template:
+            body["template"] = template
+        if brand:
+            body["brand"] = brand
+        if font:
+            body["font"] = font
+        if self.session_id:
+            body["sessionId"] = self.session_id
+        return self._request_json("/api/powerpoint/generate", body)
 
+    # -- operations on an existing .pptx ------------------------------------
 
-class AsyncPowerPointEngine:
-    """Asynchronous client for PowerPoint Engine API."""
-    
-    def __init__(
+    def replace(
         self,
-        api_key: str,
-        base_url: str = "https://api.powerpointengine.io",
-        timeout: int = 30,
-        max_retries: int = 3,
-    ):
-        """Initialize the async PowerPoint Engine client.
-        
-        Args:
-            api_key: Your PowerPoint Engine API key
-            base_url: Base URL for the API
-            timeout: Request timeout in seconds
-            max_retries: Maximum number of retry attempts
+        file_path: str,
+        replacements: Dict[str, str],
+        replace_mode: str = "placeholders",
+        images: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """Replace text (and optionally images) in your own .pptx in place.
+
+        ``replace_mode`` is ``placeholders`` ({{key}} tokens) or ``objects``
+        (match shapes by name). ``images`` maps a shape name or alt text to a
+        local image path; position, size and effects are kept.
         """
-        self.api_key = api_key
-        self.base_url = base_url.rstrip("/")
-        self.timeout = timeout
-        self.max_retries = max_retries
-        
-        self._session = None
-        self._headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "User-Agent": f"powerpoint-engine-python/1.0.0",
+        data = {
+            "replacements": json.dumps(replacements),
+            "replaceMode": replace_mode,
         }
-        
-        # Initialize resource endpoints (async versions)
-        from .resources import AsyncPresentationsResource, AsyncTemplatesResource, AsyncWebhooksResource
-        self.presentations = AsyncPresentationsResource(self)
-        self.templates = AsyncTemplatesResource(self)
-        self.webhooks = AsyncWebhooksResource(self)
-    
-    async def __aenter__(self):
-        """Async context manager entry."""
-        await self._ensure_session()
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        await self.close()
-    
-    async def _ensure_session(self):
-        """Ensure aiohttp session is created."""
-        if self._session is None:
-            import aiohttp
-            self._session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=self.timeout),
-                headers=self._headers,
+        files = {"file": _file_part(file_path)}
+        try:
+            if images:
+                for shape_name, image_path in images.items():
+                    files[f"image:{shape_name}"] = _file_part(image_path)
+            return self._request_multipart("/api/powerpoint/replace", data, files)
+        finally:
+            for part in files.values():
+                part[1].close()
+
+    def edit(self, file_path: str, operations: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Duplicate / delete / move slides in your own .pptx.
+
+        ``operations`` apply sequentially, slide numbers are 1-based, e.g.::
+
+            [{"op": "duplicate", "slide": 2},
+             {"op": "delete", "slide": 5},
+             {"op": "move", "slide": 3, "to": 1}]
+        """
+        data = {"operations": json.dumps(operations)}
+        part = _file_part(file_path)
+        try:
+            return self._request_multipart(
+                "/api/powerpoint/edit", data, {"file": part}
             )
-    
-    async def close(self):
-        """Close the aiohttp session."""
-        if self._session:
-            await self._session.close()
-            self._session = None
-    
-    async def request(
-        self,
-        method: str,
-        endpoint: str,
-        data: Optional[Dict[str, Any]] = None,
-        files: Optional[Dict[str, Any]] = None,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
-        """Make an async request to the API."""
-        import aiohttp
-        import asyncio
-        
-        await self._ensure_session()
-        
-        url = urljoin(self.base_url, endpoint.lstrip("/"))
-        
-        request_headers = self._headers.copy()
-        if headers:
-            request_headers.update(headers)
-        
-        retry_count = 0
-        while retry_count <= self.max_retries:
-            try:
-                async with self._session.request(
-                    method=method,
-                    url=url,
-                    json=data,
-                    data=files,
-                    params=params,
-                    headers=request_headers,
-                ) as response:
-                    
-                    if response.status == 204:
-                        return {}
-                    
-                    content_type = response.headers.get("content-type", "")
-                    if "application/json" in content_type:
-                        response_data = await response.json()
-                    else:
-                        if response.status == 200:
-                            content = await response.read()
-                            return {"content": content}
-                        text = await response.text()
-                        response_data = {"message": text}
-                    
-                    if not response.ok:
-                        self._handle_error_response(response.status, response_data)
-                    
-                    return response_data
-                    
-            except aiohttp.ClientError as e:
-                retry_count += 1
-                if retry_count > self.max_retries:
-                    raise PowerPointEngineError(f"Network error after {self.max_retries} retries: {str(e)}")
-                
-                wait_time = (2 ** retry_count) + (retry_count * 0.1)
-                await asyncio.sleep(wait_time)
-    
-    def _handle_error_response(self, status_code: int, response_data: Dict[str, Any]) -> None:
-        """Handle API error responses (same as sync client)."""
-        error_message = response_data.get("error", response_data.get("message", "Unknown error"))
-        request_id = response_data.get("request_id")
-        
-        if status_code == 401:
-            raise AuthenticationError(error_message, status_code, request_id)
-        elif status_code == 400:
-            raise ValidationError(error_message, status_code, request_id)
-        elif status_code == 404:
-            raise NotFoundError(error_message, status_code, request_id)
-        elif status_code == 429:
-            raise RateLimitError(error_message, status_code, request_id)
-        elif status_code >= 500:
-            raise ServerError(error_message, status_code, request_id)
-        else:
-            raise PowerPointEngineError(error_message, status_code, request_id)
+        finally:
+            part[1].close()
+
+    def merge(self, file_paths: List[str]) -> Dict[str, Any]:
+        """Merge 2-5 decks into one; each keeps its own design."""
+        if not 2 <= len(file_paths) <= 5:
+            raise ValueError("merge takes 2 to 5 files")
+        parts = [_file_part(p) for p in file_paths]
+        try:
+            files = [("files", part) for part in parts]
+            return self._request_multipart("/api/powerpoint/merge", {}, files)
+        finally:
+            for part in parts:
+                part[1].close()
+
+    def to_pdf(self, file_path: str) -> Dict[str, Any]:
+        """Convert a .pptx to PDF; result has a signed PDF downloadUrl."""
+        part = _file_part(file_path)
+        try:
+            return self._request_multipart(
+                "/api/powerpoint/pdf", {}, {"file": part}
+            )
+        finally:
+            part[1].close()
+
+    def translate(self, file_path: str, target_lang: str) -> Dict[str, Any]:
+        """Translate all text in a .pptx in place (layout preserved)."""
+        data = {"targetLang": target_lang}
+        part = _file_part(file_path)
+        try:
+            return self._request_multipart(
+                "/api/powerpoint/translate", data, {"file": part}
+            )
+        finally:
+            part[1].close()
+
+    # -- helpers -------------------------------------------------------------
+
+    def download(self, result: Dict[str, Any], to_path: str) -> str:
+        """Download the generated file from a response's downloadUrl."""
+        url = (result.get("result") or {}).get("downloadUrl") or result.get(
+            "downloadUrl"
+        )
+        if not url:
+            raise ValueError("response has no downloadUrl")
+        response = requests.get(url, timeout=self.timeout)
+        response.raise_for_status()
+        with open(to_path, "wb") as fh:
+            fh.write(response.content)
+        return to_path
+
+    def _request_json(self, endpoint: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        response = self.session.post(
+            self.base_url + endpoint, json=body, timeout=self.timeout
+        )
+        return self._parse(response)
+
+    def _request_multipart(self, endpoint: str, data, files) -> Dict[str, Any]:
+        if self.session_id:
+            data = dict(data)
+            data["sessionId"] = self.session_id
+        response = self.session.post(
+            self.base_url + endpoint, data=data, files=files, timeout=self.timeout
+        )
+        return self._parse(response)
+
+    def _parse(self, response: requests.Response) -> Dict[str, Any]:
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {"error": response.text[:500]}
+        if response.ok:
+            return payload
+        message = payload.get("error", "Unknown error")
+        status = response.status_code
+        if status == 401:
+            raise AuthenticationError(message, status)
+        if status == 400:
+            raise ValidationError(message, status)
+        if status == 404:
+            raise NotFoundError(message, status)
+        if status == 429:
+            raise RateLimitError(message, status)
+        if status >= 500:
+            raise ServerError(message, status)
+        raise PowerPointEngineError(message, status)

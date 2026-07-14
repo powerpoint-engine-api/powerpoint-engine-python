@@ -4,80 +4,33 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "powerpoint-engine-api"
-version = "1.0.0"
-description = "Python SDK for PowerPoint Engine API - Generate PowerPoint presentations programmatically"
+version = "2.0.0"
+description = "Python SDK for the PowerPoint Engine API - generate, edit, merge and PDF-convert PowerPoint decks over HTTP"
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [
     {name = "PowerPoint Engine API", email = "support@powerpointengine.io"}
 ]
-maintainers = [
-    {name = "PowerPoint Engine API", email = "support@powerpointengine.io"}
-]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Office/Business :: Office Suites",
-    "Topic :: Multimedia :: Graphics :: Presentation",
 ]
-keywords = ["powerpoint", "presentation", "api", "sdk", "office", "slides", "charts", "automation"]
+keywords = ["powerpoint", "pptx", "presentation", "api", "sdk", "markdown", "pdf"]
 dependencies = [
     "requests>=2.25.0",
-    "urllib3>=1.26.0",
-    "typing-extensions>=4.0.0; python_version<'3.10'",
 ]
-requires-python = ">=3.7"
-
-[project.optional-dependencies]
-async = [
-    "aiohttp>=3.8.0",
-    "aiofiles>=0.8.0",
-]
-dev = [
-    "pytest>=6.0",
-    "pytest-asyncio>=0.18.0",
-    "pytest-cov>=3.0.0",
-    "black>=22.0.0",
-    "flake8>=4.0.0",
-    "mypy>=0.950",
-    "sphinx>=4.0.0",
-    "sphinx-rtd-theme>=1.0.0",
-]
+requires-python = ">=3.8"
 
 [project.urls]
 Homepage = "https://powerpointengine.io"
 Documentation = "https://powerpointengine.io/docs"
 Repository = "https://github.com/powerpoint-engine-api/powerpoint-engine-python"
 "Bug Tracker" = "https://github.com/powerpoint-engine-api/powerpoint-engine-python/issues"
-Changelog = "https://github.com/powerpoint-engine-api/powerpoint-engine-python/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.black]
-line-length = 100
-target-version = ['py37', 'py38', 'py39', 'py310', 'py311']
-
-[tool.mypy]
-python_version = "3.7"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-
-[tool.pytest.ini_options]
-minversion = "6.0"
-addopts = "-ra -q --strict-markers"
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
