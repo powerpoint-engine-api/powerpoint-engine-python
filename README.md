@@ -4,10 +4,8 @@ Python client for the [PowerPoint Engine API](https://powerpointengine.io): gene
 
 ## Install
 
-Not on PyPI yet — install from GitHub:
-
 ```bash
-pip install git+https://github.com/powerpoint-engine-api/powerpoint-engine-python.git
+pip install powerpoint-engine-api
 ```
 
 ## Quick start
